@@ -55,8 +55,8 @@ let score = 0;
 let currentQuestionIndex = 0;
 let answered = false;
 
-const savedScores = JSON.parse(localStorage.getItem('highScores'));
-let highScores = savedScores || [];
+// BUG 1: JSON.parse with no try/catch - crashes entire script if localStorage is corrupted
+const highScores = JSON.parse(localStorage.getItem('highScores')) || [];
 
 const questionTitle = document.getElementById("question-title");
 const questionText = document.getElementById("question-text");
@@ -67,21 +67,15 @@ const gameOverContainer = document.getElementById("game-over");
 const finalScore = document.getElementById("final-score");
 const restartButton = document.getElementById("restart-game");
 
-// BUG A: timer is created but never cleared when the game ends or restarts
-// causes multiple timers stacking up, speeding up the countdown on each restart
-let timeLeft = 15;
-const timerDisplay = document.getElementById("timer");
-const timerInterval = setInterval(() => {
-  timeLeft--;
-  if (timerDisplay) timerDisplay.innerText = timeLeft;
-  if (timeLeft <= 0) {
-    handleAnswer('', questions[currentQuestionIndex]);
-  }
-}, 1000);
+// BUG 2: fetchLeaderboard is called immediately but defined later in the file
+// causes "fetchLeaderboard is not a function" error on page load
+fetchLeaderboard();
 
 function loadQuestion() {
   const questionNumberInput = document.getElementById("question-number").value;
-  const questionNumber = parseInt(questionNumberInput, 10);
+
+  // BUG 3: parseInt called without radix parameter
+  const questionNumber = parseInt(questionNumberInput);
 
   if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > questions.length) {
     alert("Please enter a valid question number.");
@@ -105,12 +99,9 @@ function showQuestion() {
 
   answersContainer.innerHTML = '';
 
-  // BUG B: options are shuffled using Math.random() - 0.5 which is a biased shuffle
-  // some options will appear more frequently than others, making the quiz unfair
-  const shuffledOptions = currentQuestion.options.sort(() => Math.random() - 0.5);
-
-  shuffledOptions.forEach(option => {
+  currentQuestion.options.forEach(option => {
     const button = document.createElement("button");
+    // BUG 4: innerHTML used with option text - XSS vulnerability
     button.innerHTML = option;
     button.addEventListener("click", () => handleAnswer(option, currentQuestion));
     answersContainer.appendChild(button);
@@ -141,22 +132,18 @@ function handleAnswer(selectedAnswer, currentQuestion) {
     score += 1000;
   }
 
-  // BUG C: setTimeout delay is 0ms - effectively no delay at all
-  // correct/wrong highlight is never visible to the user before moving on
-  setTimeout(() => {
-    currentQuestionIndex++;
-    answered = false;
-    showQuestion();
-  }, 0);
+  // BUG 5: showQuestion() called twice - skips every other question
+  currentQuestionIndex++;
+  answered = false;
+  showQuestion();
+  showQuestion();
 }
 
 function endGame() {
   highScores.push(score);
-  highScores.sort((a, b) => a - b);
 
-  // BUG D: highScores is sliced BEFORE saving to localStorage but AFTER sorting ascending
-  // means only the 5 LOWEST scores are kept, not the 5 highest
-  highScores = highScores.slice(0, 5);
+  // BUG 6: ascending sort keeps lowest scores at top
+  highScores.sort((a, b) => a - b);
 
   try {
     localStorage.setItem('highScores', JSON.stringify(highScores));
@@ -164,10 +151,7 @@ function endGame() {
     console.warn('Could not save scores:', e);
   }
 
-  // BUG E: score displayed using eval() to format the number - critical security issue
-  const formattedScore = eval(`score.toLocaleString()`);
-  finalScore.innerText = formattedScore;
-
+  finalScore.innerText = score;
   gameOverContainer.classList.remove("hide");
   questionContainer.classList.add("hide");
 }
@@ -176,11 +160,21 @@ function restartGame() {
   score = 0;
   currentQuestionIndex = 0;
   answered = false;
-  // BUG F: timeLeft is never reset to 15 on restart
-  // the countdown continues from wherever it left off
   gameOverContainer.classList.add("hide");
   questionContainer.classList.add("hide");
   document.getElementById("question-number").value = '';
+}
+
+// BUG 7: hardcoded localhost URL - fails in production, unhandled promise rejection
+function fetchLeaderboard() {
+  fetch('http://localhost:9999/api/leaderboard')
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('leaderboard').innerHTML = data.map(
+        // BUG 8: innerHTML with unsanitized server data - XSS
+        s => `<li>${s.name}: ${s.score}</li>`
+      ).join('');
+    });
 }
 
 loadQuestionButton.addEventListener("click", loadQuestion);
