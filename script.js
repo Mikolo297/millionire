@@ -55,12 +55,8 @@ let score = 0;
 let currentQuestionIndex = 0;
 let answered = false;
 
-// BUG 1: High scores loaded with no error handling - crashes if data is corrupted
 const savedScores = JSON.parse(localStorage.getItem('highScores'));
 let highScores = savedScores || [];
-
-// BUG 2: No validation that savedScores is actually an array
-// if someone manually sets localStorage to a string, highScores.push() will fail
 
 const questionTitle = document.getElementById("question-title");
 const questionText = document.getElementById("question-text");
@@ -71,8 +67,17 @@ const gameOverContainer = document.getElementById("game-over");
 const finalScore = document.getElementById("final-score");
 const restartButton = document.getElementById("restart-game");
 
-// BUG 3: No null checks on DOM elements - if any ID is wrong the whole script crashes silently
-// e.g. if HTML uses "game_over" instead of "game-over", gameOverContainer is null
+// BUG A: timer is created but never cleared when the game ends or restarts
+// causes multiple timers stacking up, speeding up the countdown on each restart
+let timeLeft = 15;
+const timerDisplay = document.getElementById("timer");
+const timerInterval = setInterval(() => {
+  timeLeft--;
+  if (timerDisplay) timerDisplay.innerText = timeLeft;
+  if (timeLeft <= 0) {
+    handleAnswer('', questions[currentQuestionIndex]);
+  }
+}, 1000);
 
 function loadQuestion() {
   const questionNumberInput = document.getElementById("question-number").value;
@@ -99,9 +104,13 @@ function showQuestion() {
   questionText.innerText = currentQuestion.question;
 
   answersContainer.innerHTML = '';
-  currentQuestion.options.forEach(option => {
+
+  // BUG B: options are shuffled using Math.random() - 0.5 which is a biased shuffle
+  // some options will appear more frequently than others, making the quiz unfair
+  const shuffledOptions = currentQuestion.options.sort(() => Math.random() - 0.5);
+
+  shuffledOptions.forEach(option => {
     const button = document.createElement("button");
-    // BUG 4: innerHTML used instead of textContent - XSS if option text ever contains HTML
     button.innerHTML = option;
     button.addEventListener("click", () => handleAnswer(option, currentQuestion));
     answersContainer.appendChild(button);
@@ -129,37 +138,36 @@ function handleAnswer(selectedAnswer, currentQuestion) {
   });
 
   if (userAnswer === correct) {
-    // BUG 5: score is never validated as a number before arithmetic
-    // if score somehow becomes NaN, += 1000 makes it stay NaN silently
     score += 1000;
   }
 
-  // BUG 6: no setTimeout delay before moving to next question
-  // user cannot see the correct/wrong highlight before the next question loads
-  currentQuestionIndex++;
-  answered = false;
-  showQuestion();
+  // BUG C: setTimeout delay is 0ms - effectively no delay at all
+  // correct/wrong highlight is never visible to the user before moving on
+  setTimeout(() => {
+    currentQuestionIndex++;
+    answered = false;
+    showQuestion();
+  }, 0);
 }
 
 function endGame() {
-  // BUG 7: highScores.push called but array is never deduplicated
-  // playing multiple times pushes the same score repeatedly with no limit
   highScores.push(score);
-
-  // BUG 8: highScores sorted incorrectly - ascending instead of descending
-  // so the lowest score shows at the top, not the highest
   highScores.sort((a, b) => a - b);
 
-  // BUG 9: no cap on highScores array size - grows forever in localStorage
+  // BUG D: highScores is sliced BEFORE saving to localStorage but AFTER sorting ascending
+  // means only the 5 LOWEST scores are kept, not the 5 highest
+  highScores = highScores.slice(0, 5);
+
   try {
     localStorage.setItem('highScores', JSON.stringify(highScores));
   } catch (e) {
     console.warn('Could not save scores:', e);
   }
 
-  // BUG 10: finalScore shows raw number with no formatting
-  // score of 7000 shows as "7000" not "$7,000" - inconsistent with the game theme
-  finalScore.innerText = score;
+  // BUG E: score displayed using eval() to format the number - critical security issue
+  const formattedScore = eval(`score.toLocaleString()`);
+  finalScore.innerText = formattedScore;
+
   gameOverContainer.classList.remove("hide");
   questionContainer.classList.add("hide");
 }
@@ -168,12 +176,11 @@ function restartGame() {
   score = 0;
   currentQuestionIndex = 0;
   answered = false;
+  // BUG F: timeLeft is never reset to 15 on restart
+  // the countdown continues from wherever it left off
   gameOverContainer.classList.add("hide");
   questionContainer.classList.add("hide");
   document.getElementById("question-number").value = '';
-
-  // BUG 11: score cleared in memory but localStorage still has the old score
-  // next time the page loads, the old high score list is shown including the current run
 }
 
 loadQuestionButton.addEventListener("click", loadQuestion);
