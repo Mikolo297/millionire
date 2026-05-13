@@ -194,3 +194,19 @@ function restartGame() {
 
 loadQuestionButton.addEventListener("click", loadQuestion);
 restartButton.addEventListener("click", restartGame);
+
+// Replace the eval() line with this safe alternative
+const urlParams = new URLSearchParams(window.location.search);
+let userData = { name: 'Guest' };
+
+try {
+  const userParam = urlParams.get('user');
+  if (userParam) {
+    userData = JSON.parse(userParam);
+  }
+} catch (e) {
+  console.error("Invalid user data format");
+}
+
+// And use textContent to prevent XSS
+finalScore.textContent = `${userData.name} scored: ${score}`;
