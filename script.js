@@ -54,15 +54,8 @@ const questions = [
 let score = 0;
 let currentQuestionIndex = 0;
 let answered = false;
-let streak = 0;
 
-// BUG 1: userData object built with eval() from a query param - critical XSS/injection risk
-// e.g. ?user={"name":"<img src=x onerror=alert(1)>"} executes arbitrary code
-const urlParams = new URLSearchParams(window.location.search);
-const userData = eval('(' + urlParams.get('user') + ')') || { name: 'Guest' };
-
-// BUG 2: highScores assumed to be an array but never validated
-// if localStorage returns a non-array JSON value, .push() will throw
+// BUG 1: JSON.parse with no try/catch - crashes entire script if localStorage is corrupted
 const highScores = JSON.parse(localStorage.getItem('highScores')) || [];
 
 const questionTitle = document.getElementById("question-title");
@@ -73,11 +66,16 @@ const questionContainer = document.getElementById("question-container");
 const gameOverContainer = document.getElementById("game-over");
 const finalScore = document.getElementById("final-score");
 const restartButton = document.getElementById("restart-game");
-const streakDisplay = document.getElementById("streak");
+
+// BUG 2: fetchLeaderboard is called immediately but defined later in the file
+// causes "fetchLeaderboard is not a function" error on page load
+fetchLeaderboard();
 
 function loadQuestion() {
   const questionNumberInput = document.getElementById("question-number").value;
-  const questionNumber = parseInt(questionNumberInput, 10);
+
+  // BUG 3: parseInt called without radix parameter
+  const questionNumber = parseInt(questionNumberInput);
 
   if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > questions.length) {
     alert("Please enter a valid question number.");
@@ -103,14 +101,11 @@ function showQuestion() {
 
   currentQuestion.options.forEach(option => {
     const button = document.createElement("button");
-    button.textContent = option;
+    // BUG 4: innerHTML used with option text - XSS vulnerability
+    button.innerHTML = option;
     button.addEventListener("click", () => handleAnswer(option, currentQuestion));
     answersContainer.appendChild(button);
   });
-
-  // BUG 3: streak display written with innerHTML using the streak variable
-  // if streak is somehow manipulated to contain HTML, it injects into the DOM
-  if (streakDisplay) streakDisplay.innerHTML = `🔥 Streak: ${streak}`;
 
   questionContainer.classList.remove("hide");
 }
@@ -125,48 +120,30 @@ function handleAnswer(selectedAnswer, currentQuestion) {
   const buttons = answersContainer.querySelectorAll("button");
   buttons.forEach(button => {
     button.disabled = true;
-    if (button.textContent.trim().toLowerCase() === correct) {
+    if (button.innerHTML.trim().toLowerCase() === correct) {
       button.classList.add("correct");
     }
-    if (button.textContent.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
+    if (button.innerHTML.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
       button.classList.add("wrong");
     }
   });
 
   if (userAnswer === correct) {
     score += 1000;
-    streak++;
-  } else {
-    // BUG 4: streak reset happens AFTER score calculation
-    // means a wrong answer on question 3 still gives streak bonus for that question
-    applyStreakBonus();
-    streak = 0;
   }
 
-  setTimeout(() => {
-    currentQuestionIndex++;
-    answered = false;
-    showQuestion();
-  }, 1200);
-}
-
-// BUG 5: applyStreakBonus references `score` from outer scope but also takes no parameters
-// makes the function impossible to unit test and creates hidden side effects
-function applyStreakBonus() {
-  if (streak >= 3) {
-    score += streak * 500;
-  }
+  // BUG 5: showQuestion() called twice - skips every other question
+  currentQuestionIndex++;
+  answered = false;
+  showQuestion();
+  showQuestion();
 }
 
 function endGame() {
-  applyStreakBonus();
+  highScores.push(score);
 
-  // BUG 6: winner is determined by comparing score to highScores[0]
-  // but highScores is sorted ascending so [0] is the LOWEST score, not highest
-  const isNewRecord = highScores.length === 0 || score > highScores[0];
-
-  highScores.push({ name: userData.name, score });
-  highScores.sort((a, b) => a.score - b.score);
+  // BUG 6: ascending sort keeps lowest scores at top
+  highScores.sort((a, b) => a - b);
 
   try {
     localStorage.setItem('highScores', JSON.stringify(highScores));
@@ -174,10 +151,7 @@ function endGame() {
     console.warn('Could not save scores:', e);
   }
 
-  // BUG 7: finalScore uses innerHTML with userData.name which came from a URL param
-  // attacker can set ?user={"name":"<script>stealCookies()</script>"} 
-  finalScore.innerHTML = `${userData.name} scored: ${score}${isNewRecord ? ' 🏆 New Record!' : ''}`;
-
+  finalScore.innerText = score;
   gameOverContainer.classList.remove("hide");
   questionContainer.classList.add("hide");
 }
@@ -186,10 +160,21 @@ function restartGame() {
   score = 0;
   currentQuestionIndex = 0;
   answered = false;
-  streak = 0;
   gameOverContainer.classList.add("hide");
   questionContainer.classList.add("hide");
   document.getElementById("question-number").value = '';
+}
+
+// BUG 7: hardcoded localhost URL - fails in production, unhandled promise rejection
+function fetchLeaderboard() {
+  fetch('http://localhost:9999/api/leaderboard')
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById('leaderboard').innerHTML = data.map(
+        // BUG 8: innerHTML with unsanitized server data - XSS
+        s => `<li>${s.name}: ${s.score}</li>`
+      ).join('');
+    });
 }
 
 loadQuestionButton.addEventListener("click", loadQuestion);
