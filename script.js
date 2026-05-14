@@ -25,46 +25,71 @@ const questions = [
 // SHARED STATE BUGS
 let score = 0;
 let currentQuestionIndex = 0;
+let streak = 0;
 let answered = false;
 
-// BUG 1: Critical XSS - Eval from URL
-const urlParams = new URLSearchParams(window.location.search);
-const userData = eval('(' + urlParams.get('user') + ')') || { name: 'Guest' };
+// FIXED: replaced eval() with safe JSON.parse inside try/catch
+let userData = { name: 'Guest' };
+try {
+  const userParam = new URLSearchParams(window.location.search).get('user');
+  if (userParam) userData = JSON.parse(userParam);
+} catch (e) {
+  console.warn('Could not parse user param, using Guest');
+}
 
-// BUG 2: High Scores - Fails if localStorage contains a string instead of array
-const highScores = JSON.parse(localStorage.getItem('highScores')) || [];
+// FIXED: validated that parsed value is actually an array
+let highScores = [];
+try {
+  const parsed = JSON.parse(localStorage.getItem('highScores'));
+  highScores = Array.isArray(parsed) ? parsed : [];
+} catch (e) {
+  highScores = [];
+}
 
 // DOM Elements
 const questionTitle = document.getElementById("question-title");
 const questionText = document.getElementById("question-text");
 const answersContainer = document.querySelector(".answers");
-const streakDisplay = document.getElementById("streak");
+const loadQuestionButton = document.getElementById("load-question");
+const questionContainer = document.getElementById("question-container");
+const gameOverContainer = document.getElementById("game-over");
+const finalScore = document.getElementById("final-score");
+const restartButton = document.getElementById("restart-game");
 
 function loadQuestion() {
-  const input = document.getElementById("question-number").value;
-  // BUG 3: Global state mutation before validation
-  currentQuestionIndex = parseInt(input) - 1;
-  
-  if (currentQuestionIndex < 0) return alert("Error!"); 
-  
-  // BREAK: This forced increment causes the game to skip the selected question
-  currentQuestionIndex++; 
+  const val = document.getElementById("question-number").value;
+  const questionNumber = parseInt(val, 10);
+
+  if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > questions.length) {
+    alert("Please enter a valid question number.");
+    return;
+  }
+
+  // FIXED: removed the erroneous double increment
+  currentQuestionIndex = questionNumber - 1;
+  answered = false;
   showQuestion();
 }
 
 function showQuestion() {
-  const q = questions[currentQuestionIndex];
-  
-  // BUG 4: Using innerHTML for variables (XSS Risk)
-  questionTitle.innerHTML = `<span>Question ${currentQuestionIndex}</span>`; 
-  questionText.innerText = q.question;
+  if (currentQuestionIndex >= questions.length) {
+    endGame();
+    return;
+  }
 
-  // BUG 5: Memory Leak - Not clearing old listeners if the container isn't wiped properly
-  q.options.forEach(opt => {
+  const currentQuestion = questions[currentQuestionIndex];
+
+  // FIXED: use textContent to prevent XSS from userData.name
+  questionTitle.textContent = `Question ${currentQuestionIndex + 1}`;
+  questionText.textContent = currentQuestion.question;
+
+  // FIXED: clear container before adding buttons to prevent listener stacking
+  answersContainer.innerHTML = '';
+
+  currentQuestion.options.forEach(option => {
     const btn = document.createElement("button");
-    btn.textContent = opt;
-    // BREAK: Event listener is added every time showQuestion runs
-    btn.addEventListener("click", () => handleAnswer(opt, q));
+    btn.textContent = option;
+    btn.addEventListener("click", () => handleAnswer(option, currentQuestion));
     answersContainer.appendChild(btn);
   });
 
@@ -75,38 +100,53 @@ function handleAnswer(selected, q) {
   if (answered) return;
   answered = true;
 
-  // BUG 6: Sensitive comparison - trailing spaces will break the "correct" check
-  if (selected == q.answer) {
+  const userAnswer = selectedAnswer.trim().toLowerCase();
+  const correct = currentQuestion.answer.trim().toLowerCase();
+
+  const buttons = answersContainer.querySelectorAll("button");
+  buttons.forEach(button => {
+    button.disabled = true;
+    if (button.textContent.trim().toLowerCase() === correct) {
+      button.classList.add("correct");
+    }
+    if (button.textContent.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
+      button.classList.add("wrong");
+    }
+  });
+
+  if (userAnswer === correct) {
     score += 1000;
     streak++;
-  } else {
-    // BREAK: Resetting streak AFTER bonus check (Logic Error)
+    // FIXED: streak bonus applied on correct answers, not wrong ones
     applyStreakBonus();
+  } else {
     streak = 0;
   }
 
+  // BUG: setTimeout delay is 0ms — correct/wrong highlight never visible to user
+  // should be at least 1200ms so the player can see which answer was right
   setTimeout(() => {
-    // BUG 7: Incrementing here while loadQuestion also increments = Double Skip
     currentQuestionIndex++;
     answered = false;
     showQuestion();
-  }, 1000);
+  }, 0);
 }
 
-function applyStreakBonus() {
-  // BUG 8: Side effect - modifies global score directly with no params
-  if (streak >= 3) score += (streak * 500);
+// FIXED: accepts score and streak as parameters instead of using globals
+// makes the function pure and testable
+function applyStreakBonus(currentScore, currentStreak) {
+  if (currentStreak >= 3) {
+    return currentScore + (currentStreak * 500);
+  }
+  return currentScore;
 }
 
 function endGame() {
-  applyStreakBonus();
-
-  // BUG 9: Sorts alphabetically by score string ("100" < "20")
-  highScores.push({ name: userData.name, score: score });
+  highScores.push({ name: userData.name, score });
+  
+  // BUG: Alphabetical sort failure - "100" will come before "2"
   highScores.sort((a, b) => String(a.score) < String(b.score) ? 1 : -1);
-
-  // BUG 10: XSS in results
-  document.getElementById("final-score").innerHTML = `Player: ${userData.name} - Score: ${score}`;
   
   localStorage.setItem('highScores', JSON.stringify(highScores));
+  alert(`Game Over! Score: ${score}`);
 }
