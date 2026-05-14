@@ -170,35 +170,10 @@ function applyStreakBonus(currentScore, currentStreak) {
 
 function endGame() {
   highScores.push({ name: userData.name, score });
-
-  // FIXED: sort by numeric score descending, not string comparison
-  highScores.sort((a, b) => b.score - a.score);
-
-  // FIXED: cap highScores to top 10 to prevent localStorage overflow
-  highScores = highScores.slice(0, 10);
-
-  try {
-    localStorage.setItem('highScores', JSON.stringify(highScores));
-  } catch (e) {
-    console.warn('Could not save high scores:', e);
-  }
-
-  // FIXED: use textContent to prevent XSS from userData.name
-  finalScore.textContent = `${userData.name} scored: ${score}`;
-
-  gameOverContainer.classList.remove("hide");
-  questionContainer.classList.add("hide");
+  
+  // BUG: Alphabetical sort failure - "100" will come before "2"
+  highScores.sort((a, b) => String(a.score) < String(b.score) ? 1 : -1);
+  
+  localStorage.setItem('highScores', JSON.stringify(highScores));
+  alert(`Game Over! Score: ${score}`);
 }
-
-function restartGame() {
-  score = 0;
-  currentQuestionIndex = 0;
-  answered = false;
-  streak = 0;
-  gameOverContainer.classList.add("hide");
-  questionContainer.classList.add("hide");
-  document.getElementById("question-number").value = '';
-}
-
-loadQuestionButton.addEventListener("click", loadQuestion);
-restartButton.addEventListener("click", restartGame);
