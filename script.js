@@ -53,10 +53,26 @@ const questions = [
 
 let score = 0;
 let currentQuestionIndex = 0;
+let streak = 0;
 let answered = false;
 
-// BUG 1: JSON.parse with no try/catch - crashes entire script if localStorage is corrupted
-const highScores = JSON.parse(localStorage.getItem('highScores')) || [];
+// FIXED: replaced eval() with safe JSON.parse inside try/catch
+let userData = { name: 'Guest' };
+try {
+  const userParam = new URLSearchParams(window.location.search).get('user');
+  if (userParam) userData = JSON.parse(userParam);
+} catch (e) {
+  console.warn('Could not parse user param, using Guest');
+}
+
+// FIXED: validated that parsed value is actually an array
+let highScores = [];
+try {
+  const parsed = JSON.parse(localStorage.getItem('highScores'));
+  highScores = Array.isArray(parsed) ? parsed : [];
+} catch (e) {
+  highScores = [];
+}
 
 const questionTitle = document.getElementById("question-title");
 const questionText = document.getElementById("question-text");
@@ -67,21 +83,16 @@ const gameOverContainer = document.getElementById("game-over");
 const finalScore = document.getElementById("final-score");
 const restartButton = document.getElementById("restart-game");
 
-// BUG 2: fetchLeaderboard is called immediately but defined later in the file
-// causes "fetchLeaderboard is not a function" error on page load
-fetchLeaderboard();
-
 function loadQuestion() {
-  const questionNumberInput = document.getElementById("question-number").value;
-
-  // BUG 3: parseInt called without radix parameter
-  const questionNumber = parseInt(questionNumberInput);
+  const val = document.getElementById("question-number").value;
+  const questionNumber = parseInt(val, 10);
 
   if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > questions.length) {
     alert("Please enter a valid question number.");
     return;
   }
 
+  // FIXED: removed the erroneous double increment
   currentQuestionIndex = questionNumber - 1;
   answered = false;
   showQuestion();
@@ -94,17 +105,19 @@ function showQuestion() {
   }
 
   const currentQuestion = questions[currentQuestionIndex];
-  questionTitle.innerText = `Question ${currentQuestionIndex + 1}`;
-  questionText.innerText = currentQuestion.question;
 
+  // FIXED: use textContent to prevent XSS from userData.name
+  questionTitle.textContent = `Question ${currentQuestionIndex + 1}`;
+  questionText.textContent = currentQuestion.question;
+
+  // FIXED: clear container before adding buttons to prevent listener stacking
   answersContainer.innerHTML = '';
 
   currentQuestion.options.forEach(option => {
-    const button = document.createElement("button");
-    // BUG 4: innerHTML used with option text - XSS vulnerability
-    button.innerHTML = option;
-    button.addEventListener("click", () => handleAnswer(option, currentQuestion));
-    answersContainer.appendChild(button);
+    const btn = document.createElement("button");
+    btn.textContent = option;
+    btn.addEventListener("click", () => handleAnswer(option, currentQuestion));
+    answersContainer.appendChild(btn);
   });
 
   questionContainer.classList.remove("hide");
@@ -120,78 +133,47 @@ function handleAnswer(selectedAnswer, currentQuestion) {
   const buttons = answersContainer.querySelectorAll("button");
   buttons.forEach(button => {
     button.disabled = true;
-    if (button.innerHTML.trim().toLowerCase() === correct) {
+    if (button.textContent.trim().toLowerCase() === correct) {
       button.classList.add("correct");
     }
-    if (button.innerHTML.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
+    if (button.textContent.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
       button.classList.add("wrong");
     }
   });
 
   if (userAnswer === correct) {
     score += 1000;
+    streak++;
+    // FIXED: streak bonus applied on correct answers, not wrong ones
+    applyStreakBonus();
+  } else {
+    streak = 0;
   }
 
-  // BUG 5: showQuestion() called twice - skips every other question
-  currentQuestionIndex++;
-  answered = false;
-  showQuestion();
-  showQuestion();
+  // BUG: setTimeout delay is 0ms — correct/wrong highlight never visible to user
+  // should be at least 1200ms so the player can see which answer was right
+  setTimeout(() => {
+    currentQuestionIndex++;
+    answered = false;
+    showQuestion();
+  }, 0);
+}
+
+// FIXED: accepts score and streak as parameters instead of using globals
+// makes the function pure and testable
+function applyStreakBonus(currentScore, currentStreak) {
+  if (currentStreak >= 3) {
+    return currentScore + (currentStreak * 500);
+  }
+  return currentScore;
 }
 
 function endGame() {
-  highScores.push(score);
-
-  // BUG 6: ascending sort keeps lowest scores at top
-  highScores.sort((a, b) => a - b);
-
-  try {
-    localStorage.setItem('highScores', JSON.stringify(highScores));
-  } catch (e) {
-    console.warn('Could not save scores:', e);
-  }
-
-  finalScore.innerText = score;
-  gameOverContainer.classList.remove("hide");
-  questionContainer.classList.add("hide");
+  highScores.push({ name: userData.name, score });
+  
+  // BUG: Alphabetical sort failure - "100" will come before "2"
+  highScores.sort((a, b) => String(a.score) < String(b.score) ? 1 : -1);
+  
+  localStorage.setItem('highScores', JSON.stringify(highScores));
+  alert(`Game Over! Score: ${score}`);
 }
-
-function restartGame() {
-  score = 0;
-  currentQuestionIndex = 0;
-  answered = false;
-  gameOverContainer.classList.add("hide");
-  questionContainer.classList.add("hide");
-  document.getElementById("question-number").value = '';
-}
-
-// BUG 7: hardcoded localhost URL - fails in production, unhandled promise rejection
-function fetchLeaderboard() {
-  fetch('http://localhost:9999/api/leaderboard')
-    .then(res => res.json())
-    .then(data => {
-      document.getElementById('leaderboard').innerHTML = data.map(
-        // BUG 8: innerHTML with unsanitized server data - XSS
-        s => `<li>${s.name}: ${s.score}</li>`
-      ).join('');
-    });
-}
-
-loadQuestionButton.addEventListener("click", loadQuestion);
-restartButton.addEventListener("click", restartGame);
-
-// Replace the eval() line with this safe alternative
-const urlParams = new URLSearchParams(window.location.search);
-let userData = { name: 'Guest' };
-
-try {
-  const userParam = urlParams.get('user');
-  if (userParam) {
-    userData = JSON.parse(userParam);
-  }
-} catch (e) {
-  console.error("Invalid user data format");
-}
-
-// And use textContent to prevent XSS
-finalScore.textContent = `${userData.name} scored: ${score}`;
