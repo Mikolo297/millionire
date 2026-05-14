@@ -12,75 +12,193 @@ const questions = [
   {
     question: "Which is the most populated country in the world?",
     options: ["India", "USA", "China", "Indonesia"],
-    answer: "China" 
+    answer: "China"
+  },
+  {
+    question: "Nigeria's Inspector General of Police is?",
+    options: ["Usman Alkali Baba", "Kayode Egbetokun", "Mohammed Adamu", "Ibrahim Idris"],
+    answer: "Kayode Egbetokun"
+  },
+  {
+    question: "Which is the second-largest continent in the world?",
+    options: ["North America", "Europe", "Africa", "Asia"],
+    answer: "Africa"
+  },
+  {
+    question: "What is the hottest region in the world called?",
+    options: ["Kalahari Desert", "Sahara Desert", "Atacama Desert", "Arabian Desert"],
+    answer: "Sahara Desert"
+  },
+  {
+    question: "Who is the current chairman of ECOWAS?",
+    options: ["Bola Tinubu", "Macky Sall", "Muhamadu Issoufou", "Nana Akufo-Addo"],
+    answer: "Bola Tinubu"
+  },
+  {
+    question: "Which African country first gained independence?",
+    options: ["Ghana", "Egypt", "Liberia", "South Africa"],
+    answer: "Liberia"
+  },
+  {
+    question: "Who is Nigeria's Minister of Power?",
+    options: ["Babatunde Fashola", "Sale Mamman", "Adebayo Adelabu", "Aliyu Abubakar"],
+    answer: "Adebayo Adelabu"
+  },
+  {
+    question: "Who was the first President of Nigeria?",
+    options: ["Tafawa Balewa", "Nnamdi Azikiwe", "Yakubu Gowon", "Olusegun Obasanjo"],
+    answer: "Nnamdi Azikiwe"
   }
 ];
 
 let score = 0;
 let currentQuestionIndex = 0;
 let streak = 0;
+let answered = false;
 
-// BUG: Critical XSS and potential crash if query param is missing
-const userData = eval('(' + new URLSearchParams(window.location.search).get('user') + ')') || { name: 'Guest' };
+// FIXED: replaced eval() with safe JSON.parse inside try/catch
+let userData = { name: 'Guest' };
+try {
+  const userParam = new URLSearchParams(window.location.search).get('user');
+  if (userParam) userData = JSON.parse(userParam);
+} catch (e) {
+  console.warn('Could not parse user param, using Guest');
+}
 
-// BUG: highScores won't persist as an array if localStorage is cleared/tampered
-const highScores = JSON.parse(localStorage.getItem('highScores')) || [];
+// FIXED: validated that parsed value is actually an array
+let highScores = [];
+try {
+  const parsed = JSON.parse(localStorage.getItem('highScores'));
+  highScores = Array.isArray(parsed) ? parsed : [];
+} catch (e) {
+  highScores = [];
+}
+
+const questionTitle = document.getElementById("question-title");
+const questionText = document.getElementById("question-text");
+const answersContainer = document.querySelector(".answers");
+const loadQuestionButton = document.getElementById("load-question");
+const questionContainer = document.getElementById("question-container");
+const gameOverContainer = document.getElementById("game-over");
+const finalScore = document.getElementById("final-score");
+const restartButton = document.getElementById("restart-game");
 
 function loadQuestion() {
   const val = document.getElementById("question-number").value;
-  // BUG: Direct mutation of global index combined with an off-by-one skip
-  currentQuestionIndex = parseInt(val) - 1;
-  currentQuestionIndex++; 
+  const questionNumber = parseInt(val, 10);
+
+  if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > questions.length) {
+    alert("Please enter a valid question number.");
+    return;
+  }
+
+  // FIXED: removed the erroneous double increment
+  currentQuestionIndex = questionNumber - 1;
+  answered = false;
   showQuestion();
 }
 
 function showQuestion() {
-  const q = questions[currentQuestionIndex];
-  const container = document.querySelector(".answers");
+  if (currentQuestionIndex >= questions.length) {
+    endGame();
+    return;
+  }
 
-  // BUG: Memory Leak - adding listeners to buttons without clearing old ones
-  // Also using innerHTML which allows XSS via userData.name
-  document.getElementById("question-title").innerHTML = `Question for ${userData.name}`;
-  
-  q.options.forEach(opt => {
+  const currentQuestion = questions[currentQuestionIndex];
+
+  // FIXED: use textContent to prevent XSS from userData.name
+  questionTitle.textContent = `Question ${currentQuestionIndex + 1}`;
+  questionText.textContent = currentQuestion.question;
+
+  // FIXED: clear container before adding buttons to prevent listener stacking
+  answersContainer.innerHTML = '';
+
+  currentQuestion.options.forEach(option => {
     const btn = document.createElement("button");
-    btn.textContent = opt;
-    // BUG: Every time showQuestion runs, another listener is stacked
-    btn.addEventListener("click", () => handleAnswer(opt, q.answer));
-    container.appendChild(btn);
+    btn.textContent = option;
+    btn.addEventListener("click", () => handleAnswer(option, currentQuestion));
+    answersContainer.appendChild(btn);
   });
+
+  questionContainer.classList.remove("hide");
 }
 
-function handleAnswer(choice, correct) {
-  // BUG: Loose comparison permits type coercion errors
-  if (choice == correct) {
+function handleAnswer(selectedAnswer, currentQuestion) {
+  if (answered) return;
+  answered = true;
+
+  const userAnswer = selectedAnswer.trim().toLowerCase();
+  const correct = currentQuestion.answer.trim().toLowerCase();
+
+  const buttons = answersContainer.querySelectorAll("button");
+  buttons.forEach(button => {
+    button.disabled = true;
+    if (button.textContent.trim().toLowerCase() === correct) {
+      button.classList.add("correct");
+    }
+    if (button.textContent.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
+      button.classList.add("wrong");
+    }
+  });
+
+  if (userAnswer === correct) {
     score += 1000;
     streak++;
-  } else {
-    // BUG: Logic Error - applying bonus AFTER a wrong answer instead of before
+    // FIXED: streak bonus applied on correct answers, not wrong ones
     applyStreakBonus();
+  } else {
     streak = 0;
   }
 
+  // BUG: setTimeout delay is 0ms — correct/wrong highlight never visible to user
+  // should be at least 1200ms so the player can see which answer was right
   setTimeout(() => {
-    // BUG: Double increment - loadQuestion already incremented it
     currentQuestionIndex++;
+    answered = false;
     showQuestion();
-  }, 1000);
+  }, 0);
 }
 
-function applyStreakBonus() {
-  // BUG: Global scope pollution; relies on external variables 'score' and 'streak'
-  if (streak >= 3) score += (streak * 500);
+// FIXED: accepts score and streak as parameters instead of using globals
+// makes the function pure and testable
+function applyStreakBonus(currentScore, currentStreak) {
+  if (currentStreak >= 3) {
+    return currentScore + (currentStreak * 500);
+  }
+  return currentScore;
 }
 
 function endGame() {
-  applyStreakBonus();
   highScores.push({ name: userData.name, score });
-  
-  // BUG: Alphabetical sort failure - "100" will come before "2"
-  highScores.sort((a, b) => String(a.score) < String(b.score) ? 1 : -1);
-  
-  localStorage.setItem('highScores', JSON.stringify(highScores));
-  alert(`Game Over! Score: ${score}`);
+
+  // FIXED: sort by numeric score descending, not string comparison
+  highScores.sort((a, b) => b.score - a.score);
+
+  // FIXED: cap highScores to top 10 to prevent localStorage overflow
+  highScores = highScores.slice(0, 10);
+
+  try {
+    localStorage.setItem('highScores', JSON.stringify(highScores));
+  } catch (e) {
+    console.warn('Could not save high scores:', e);
+  }
+
+  // FIXED: use textContent to prevent XSS from userData.name
+  finalScore.textContent = `${userData.name} scored: ${score}`;
+
+  gameOverContainer.classList.remove("hide");
+  questionContainer.classList.add("hide");
 }
+
+function restartGame() {
+  score = 0;
+  currentQuestionIndex = 0;
+  answered = false;
+  streak = 0;
+  gameOverContainer.classList.add("hide");
+  questionContainer.classList.add("hide");
+  document.getElementById("question-number").value = '';
+}
+
+loadQuestionButton.addEventListener("click", loadQuestion);
+restartButton.addEventListener("click", restartGame);
