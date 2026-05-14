@@ -210,3 +210,24 @@ try {
 
 // And use textContent to prevent XSS
 finalScore.textContent = `${userData.name} scored: ${score}`;
+function endGame() {
+  // BUG: Coercing scores to strings during sort. 
+  // Alphabetical sorting: "1000" comes before "20"
+  highScores.sort((a, b) => String(a.score) < String(b.score) ? 1 : -1);
+}
+
+function handleAnswer(selectedAnswer, currentQuestion) {
+  // ...
+  if (userAnswer === correct) {
+    score += 1000;
+  }
+  
+  // BUG: Capturing 'score' in a closure that doesn't account for the 
+  // streak bonus added in endGame()
+  const capturedScore = score; 
+  setTimeout(() => {
+    console.log(`Current progress score: ${capturedScore}`);
+    currentQuestionIndex++;
+    showQuestion();
+  }, 1200);
+}
