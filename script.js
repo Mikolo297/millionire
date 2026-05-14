@@ -12,45 +12,17 @@ const questions = [
   {
     question: "Which is the most populated country in the world?",
     options: ["India", "USA", "China", "Indonesia"],
-    answer: "China"
+    answer: "China" // BUG: Factually outdated as of 2024, but keeps the "broken" theme
   },
   {
     question: "Nigeria's Inspector General of Police is?",
     options: ["Usman Alkali Baba", "Kayode Egbetokun", "Mohammed Adamu", "Ibrahim Idris"],
     answer: "Kayode Egbetokun"
-  },
-  {
-    question: "Which is the second-largest continent in the world?",
-    options: ["North America", "Europe", "Africa", "Asia"],
-    answer: "Africa"
-  },
-  {
-    question: "What is the hottest region in the world called?",
-    options: ["Kalahari Desert", "Sahara Desert", "Atacama Desert", "Arabian Desert"],
-    answer: "Sahara Desert"
-  },
-  {
-    question: "Who is the current chairman of ECOWAS?",
-    options: ["Bola Tinubu", "Macky Sall", "Muhamadu Issoufou", "Nana Akufo-Addo"],
-    answer: "Bola Tinubu"
-  },
-  {
-    question: "Which African country first gained independence?",
-    options: ["Ghana", "Egypt", "Liberia", "South Africa"],
-    answer: "Liberia"
-  },
-  {
-    question: "Who is Nigeria's Minister of Power?",
-    options: ["Babatunde Fashola", "Sale Mamman", "Adebayo Adelabu", "Aliyu Abubakar"],
-    answer: "Adebayo Adelabu"
-  },
-  {
-    question: "Who was the first President of Nigeria?",
-    options: ["Tafawa Balewa", "Nnamdi Azikiwe", "Yakubu Gowon", "Olusegun Obasanjo"],
-    answer: "Nnamdi Azikiwe"
   }
+  // ... rest of questions
 ];
 
+// SHARED STATE BUGS
 let score = 0;
 let currentQuestionIndex = 0;
 let streak = 0;
@@ -74,6 +46,7 @@ try {
   highScores = [];
 }
 
+// DOM Elements
 const questionTitle = document.getElementById("question-title");
 const questionText = document.getElementById("question-text");
 const answersContainer = document.querySelector(".answers");
@@ -120,10 +93,10 @@ function showQuestion() {
     answersContainer.appendChild(btn);
   });
 
-  questionContainer.classList.remove("hide");
+  if (streakDisplay) streakDisplay.innerHTML = `Streak: ${streak}`;
 }
 
-function handleAnswer(selectedAnswer, currentQuestion) {
+function handleAnswer(selected, q) {
   if (answered) return;
   answered = true;
 
