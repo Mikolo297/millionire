@@ -26,7 +26,6 @@ const questions = [
 let score = 0;
 let currentQuestionIndex = 0;
 let answered = false;
-let streak = 0;
 
 // BUG 1: Critical XSS - Eval from URL
 const urlParams = new URLSearchParams(window.location.search);
