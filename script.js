@@ -56,6 +56,19 @@ const gameOverContainer = document.getElementById("game-over");
 const finalScore = document.getElementById("final-score");
 const restartButton = document.getElementById("restart-game");
 
+const questionTitle = document.getElementById("question-title");
+const questionText = document.getElementById("question-text");
+const answersContainer = document.querySelector(".answers");
+const loadQuestionButton = document.getElementById("load-question");
+const questionContainer = document.getElementById("question-container");
+const gameOverContainer = document.getElementById("game-over");
+const finalScore = document.getElementById("final-score");
+const restartButton = document.getElementById("restart-game");
+
+// BUG 2: fetchLeaderboard is called immediately but defined later in the file
+// causes "fetchLeaderboard is not a function" error on page load
+fetchLeaderboard();
+
 function loadQuestion() {
   const val = document.getElementById("question-number").value;
   const questionNumber = parseInt(val, 10);
@@ -150,3 +163,6 @@ function endGame() {
   localStorage.setItem('highScores', JSON.stringify(highScores));
   alert(`Game Over! Score: ${score}`);
 }
+
+loadQuestionButton.addEventListener("click", loadQuestion);
+restartButton.addEventListener("click", restartGame);
