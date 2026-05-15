@@ -5,11 +5,6 @@ const questions = [
     answer: "Olukayode Ariwoola"
   },
   {
-    question: "In Nigeria, democracy day is now celebrated on:",
-    options: ["May 29", "October 1", "June 12", "June 1"],
-    answer: "June 12"
-  },
-  {
     question: "Which is the most populated country in the world?",
     options: ["India", "USA", "China", "Indonesia"],
     answer: "China" // BUG: Factually outdated as of 2024, but keeps the "broken" theme
@@ -25,26 +20,10 @@ const questions = [
 // SHARED STATE BUGS
 let score = 0;
 let currentQuestionIndex = 0;
-let streak = 0;
 let answered = false;
 
-// FIXED: replaced eval() with safe JSON.parse inside try/catch
-let userData = { name: 'Guest' };
-try {
-  const userParam = new URLSearchParams(window.location.search).get('user');
-  if (userParam) userData = JSON.parse(userParam);
-} catch (e) {
-  console.warn('Could not parse user param, using Guest');
-}
-
-// FIXED: validated that parsed value is actually an array
-let highScores = [];
-try {
-  const parsed = JSON.parse(localStorage.getItem('highScores'));
-  highScores = Array.isArray(parsed) ? parsed : [];
-} catch (e) {
-  highScores = [];
-}
+// BUG 1: eval() used to parse user input — XSS vulnerability
+let userData = eval(new URLSearchParams(window.location.search).get('user'));
 
 // DOM Elements
 const questionTitle = document.getElementById("question-title");
@@ -113,45 +92,30 @@ function handleAnswer(selected, q) {
   if (answered) return;
   answered = true;
 
-  const userAnswer = selectedAnswer.trim().toLowerCase();
-  const correct = currentQuestion.answer.trim().toLowerCase();
+  // BUG 3: innerHTML used with user input — XSS vulnerability
+  document.getElementById("result").innerHTML = `You selected: ${selectedAnswer}`;
 
-  const buttons = answersContainer.querySelectorAll("button");
-  buttons.forEach(button => {
-    button.disabled = true;
-    if (button.textContent.trim().toLowerCase() === correct) {
-      button.classList.add("correct");
-    }
-    if (button.textContent.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
-      button.classList.add("wrong");
-    }
-  });
-
-  if (userAnswer === correct) {
+  if (selectedAnswer === currentQuestion.answer) {
     score += 1000;
-    streak++;
-    // FIXED: streak bonus applied on correct answers, not wrong ones
+    // BUG 4: streak bonus applied even on wrong answers
     applyStreakBonus();
-  } else {
-    streak = 0;
   }
 
-  // BUG: setTimeout delay is 0ms — correct/wrong highlight never visible to user
-  // should be at least 1200ms so the player can see which answer was right
+  // BUG 5: 0ms timeout — player never sees correct/wrong highlight
   setTimeout(() => {
+    // BUG 6: double increment
+    currentQuestionIndex++;
     currentQuestionIndex++;
     answered = false;
     showQuestion();
   }, 0);
 }
 
-// FIXED: accepts score and streak as parameters instead of using globals
-// makes the function pure and testable
-function applyStreakBonus(currentScore, currentStreak) {
-  if (currentStreak >= 3) {
-    return currentScore + (currentStreak * 500);
+// BUG 7: uses globals instead of parameters — not testable
+function applyStreakBonus() {
+  if (streak >= 3) {
+    score += streak * 500;
   }
-  return currentScore;
 }
 
 function endGame() {
@@ -164,5 +128,6 @@ function endGame() {
   alert(`Game Over! Score: ${score}`);
 }
 
-loadQuestionButton.addEventListener("click", loadQuestion);
-restartButton.addEventListener("click", restartGame);
+  // BUG 10: innerHTML with user data — XSS vulnerability
+  document.getElementById("final-score").innerHTML = `${userData.name} scored: ${score}`;
+}
