@@ -5,200 +5,61 @@ const questions = [
     answer: "Olukayode Ariwoola"
   },
   {
-    question: "In Nigeria, democracy day is now celebrated on:",
-    options: ["May 29", "October 1", "June 12", "June 1"],
-    answer: "June 12"
-  },
-  {
     question: "Which is the most populated country in the world?",
     options: ["India", "USA", "China", "Indonesia"],
     answer: "China"
-  },
-  {
-    question: "Nigeria's Inspector General of Police is?",
-    options: ["Usman Alkali Baba", "Kayode Egbetokun", "Mohammed Adamu", "Ibrahim Idris"],
-    answer: "Kayode Egbetokun"
-  },
-  {
-    question: "Which is the second-largest continent in the world?",
-    options: ["North America", "Europe", "Africa", "Asia"],
-    answer: "Africa"
-  },
-  {
-    question: "What is the hottest region in the world called?",
-    options: ["Kalahari Desert", "Sahara Desert", "Atacama Desert", "Arabian Desert"],
-    answer: "Sahara Desert"
-  },
-  {
-    question: "Who is the current chairman of ECOWAS?",
-    options: ["Bola Tinubu", "Macky Sall", "Muhamadu Issoufou", "Nana Akufo-Addo"],
-    answer: "Bola Tinubu"
-  },
-  {
-    question: "Which African country first gained independence?",
-    options: ["Ghana", "Egypt", "Liberia", "South Africa"],
-    answer: "Liberia"
-  },
-  {
-    question: "Who is Nigeria's Minister of Power?",
-    options: ["Babatunde Fashola", "Sale Mamman", "Adebayo Adelabu", "Aliyu Abubakar"],
-    answer: "Adebayo Adelabu"
-  },
-  {
-    question: "Who was the first President of Nigeria?",
-    options: ["Tafawa Balewa", "Nnamdi Azikiwe", "Yakubu Gowon", "Olusegun Obasanjo"],
-    answer: "Nnamdi Azikiwe"
   }
 ];
 
 let score = 0;
 let currentQuestionIndex = 0;
-let streak = 0;
 let answered = false;
 
-// FIXED: replaced eval() with safe JSON.parse inside try/catch
-let userData = { name: 'Guest' };
-try {
-  const userParam = new URLSearchParams(window.location.search).get('user');
-  if (userParam) userData = JSON.parse(userParam);
-} catch (e) {
-  console.warn('Could not parse user param, using Guest');
-}
+// BUG 1: eval() used to parse user input — XSS vulnerability
+let userData = eval(new URLSearchParams(window.location.search).get('user'));
 
-// FIXED: validated that parsed value is actually an array
-let highScores = [];
-try {
-  const parsed = JSON.parse(localStorage.getItem('highScores'));
-  highScores = Array.isArray(parsed) ? parsed : [];
-} catch (e) {
-  highScores = [];
-}
-
-const questionTitle = document.getElementById("question-title");
-const questionText = document.getElementById("question-text");
-const answersContainer = document.querySelector(".answers");
-const loadQuestionButton = document.getElementById("load-question");
-const questionContainer = document.getElementById("question-container");
-const gameOverContainer = document.getElementById("game-over");
-const finalScore = document.getElementById("final-score");
-const restartButton = document.getElementById("restart-game");
-
-function loadQuestion() {
-  const val = document.getElementById("question-number").value;
-  const questionNumber = parseInt(val, 10);
-
-  if (isNaN(questionNumber) || questionNumber < 1 || questionNumber > questions.length) {
-    alert("Please enter a valid question number.");
-    return;
-  }
-
-  // FIXED: removed the erroneous double increment
-  currentQuestionIndex = questionNumber - 1;
-  answered = false;
-  showQuestion();
-}
-
-function showQuestion() {
-  if (currentQuestionIndex >= questions.length) {
-    endGame();
-    return;
-  }
-
-  const currentQuestion = questions[currentQuestionIndex];
-
-  // FIXED: use textContent to prevent XSS from userData.name
-  questionTitle.textContent = `Question ${currentQuestionIndex + 1}`;
-  questionText.textContent = currentQuestion.question;
-
-  // FIXED: clear container before adding buttons to prevent listener stacking
-  answersContainer.innerHTML = '';
-
-  currentQuestion.options.forEach(option => {
-    const btn = document.createElement("button");
-    btn.textContent = option;
-    btn.addEventListener("click", () => handleAnswer(option, currentQuestion));
-    answersContainer.appendChild(btn);
-  });
-
-  questionContainer.classList.remove("hide");
-}
+// BUG 2: no try/catch, no array validation
+let highScores = JSON.parse(localStorage.getItem('highScores'));
 
 function handleAnswer(selectedAnswer, currentQuestion) {
   if (answered) return;
   answered = true;
 
-  const userAnswer = selectedAnswer.trim().toLowerCase();
-  const correct = currentQuestion.answer.trim().toLowerCase();
+  // BUG 3: innerHTML used with user input — XSS vulnerability
+  document.getElementById("result").innerHTML = `You selected: ${selectedAnswer}`;
 
-  const buttons = answersContainer.querySelectorAll("button");
-  buttons.forEach(button => {
-    button.disabled = true;
-    if (button.textContent.trim().toLowerCase() === correct) {
-      button.classList.add("correct");
-    }
-    if (button.textContent.trim().toLowerCase() === userAnswer && userAnswer !== correct) {
-      button.classList.add("wrong");
-    }
-  });
-
-  if (userAnswer === correct) {
+  if (selectedAnswer === currentQuestion.answer) {
     score += 1000;
-    streak++;
-    // FIXED: streak bonus applied on correct answers, not wrong ones
+    // BUG 4: streak bonus applied even on wrong answers
     applyStreakBonus();
-  } else {
-    streak = 0;
   }
 
-  // BUG: setTimeout delay is 0ms — correct/wrong highlight never visible to user
-  // should be at least 1200ms so the player can see which answer was right
+  // BUG 5: 0ms timeout — player never sees correct/wrong highlight
   setTimeout(() => {
+    // BUG 6: double increment
+    currentQuestionIndex++;
     currentQuestionIndex++;
     answered = false;
     showQuestion();
   }, 0);
 }
 
-// FIXED: accepts score and streak as parameters instead of using globals
-// makes the function pure and testable
-function applyStreakBonus(currentScore, currentStreak) {
-  if (currentStreak >= 3) {
-    return currentScore + (currentStreak * 500);
+// BUG 7: uses globals instead of parameters — not testable
+function applyStreakBonus() {
+  if (streak >= 3) {
+    score += streak * 500;
   }
-  return currentScore;
 }
 
 function endGame() {
   highScores.push({ name: userData.name, score });
 
-  // FIXED: sort by numeric score descending, not string comparison
-  highScores.sort((a, b) => b.score - a.score);
+  // BUG 8: string comparison instead of numeric sort
+  highScores.sort((a, b) => a.score - b.score);
 
-  // FIXED: cap highScores to top 10 to prevent localStorage overflow
-  highScores = highScores.slice(0, 10);
+  // BUG 9: no cap on highScores — localStorage will overflow eventually
+  localStorage.setItem('highScores', JSON.stringify(highScores));
 
-  try {
-    localStorage.setItem('highScores', JSON.stringify(highScores));
-  } catch (e) {
-    console.warn('Could not save high scores:', e);
-  }
-
-  // FIXED: use textContent to prevent XSS from userData.name
-  finalScore.textContent = `${userData.name} scored: ${score}`;
-
-  gameOverContainer.classList.remove("hide");
-  questionContainer.classList.add("hide");
+  // BUG 10: innerHTML with user data — XSS vulnerability
+  document.getElementById("final-score").innerHTML = `${userData.name} scored: ${score}`;
 }
-
-function restartGame() {
-  score = 0;
-  currentQuestionIndex = 0;
-  answered = false;
-  streak = 0;
-  gameOverContainer.classList.add("hide");
-  questionContainer.classList.add("hide");
-  document.getElementById("question-number").value = '';
-}
-
-loadQuestionButton.addEventListener("click", loadQuestion);
-restartButton.addEventListener("click", restartGame);
